@@ -380,7 +380,7 @@ function Results({
 
       {/* Commit set */}
       <Section title="Commit set" meta={`|H| = ${fmtInt(analysis.commitsInSet)}`}>
-        <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3">
           <Stat
             label="Commits |H|"
             value={fmtInt(analysis.commitsInSet)}
@@ -403,7 +403,7 @@ function Results({
 
       {/* Repository metrics */}
       <Section title="Repository metrics" meta="root of the commit tree (§2.3)">
-        <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4 lg:grid-cols-7">
+        <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-4">
           <Stat label="Added l+" value={fmtInt(rm.added)} positive />
           <Stat label="Removed l−" value={fmtInt(rm.removed)} negative />
           <Stat label="Growth δ" value={fmtSigned(rm.growth)} />
@@ -522,9 +522,20 @@ function Stat({
         ? 'text-negative'
         : 'text-foreground';
   return (
-    <div className="rounded-xl border border-line bg-surface-2/40 p-3.5">
+    <div
+      className="min-w-0 rounded-xl border border-line bg-surface-2/40 p-3.5"
+      style={{ containerType: 'inline-size' }}
+    >
       <div className="text-[0.7rem] font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className={`mt-1 font-mono text-xl font-semibold tabular-nums ${tone}`}>{value}</div>
+      {/* Fluid value — scales with the card width so large numbers (e.g.
+          24,232,995) always fit inside the border instead of spilling out.
+          Capped at 1.25rem once the card is wide enough. */}
+      <div
+        className={`mt-1 font-mono font-semibold leading-tight tabular-nums ${tone}`}
+        style={{ fontSize: 'min(1.25rem, 10cqw)' }}
+      >
+        {value}
+      </div>
       {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
     </div>
   );
