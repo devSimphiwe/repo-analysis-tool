@@ -28,6 +28,11 @@ export interface AnalyzeOptions {
   since?: number;
   /** UNIX seconds (exclusive upper bound). Forms H_{i,j}. */
   until?: number;
+  /**
+   * Restrict H to commits authored by these canonical emails (after .mailmap and
+   * any manual merges). Empty or omitted analyses every author.
+   */
+  authors?: string[];
   /** Repository display name (metadata only). */
   repoName?: string;
   /** Resolved reference commit hash (metadata only). */
@@ -131,6 +136,8 @@ export interface AnalysisResult {
   directories: ObjectMetrics[];
   repository: RepositoryMetrics;
   authors: AuthorMetrics[];
+  /** Canonical emails H was filtered to; empty = all authors (echoes opts.authors). */
+  authorFilter: string[];
 }
 
 /** Response returned when a repository is cloned and analysed in one step. */

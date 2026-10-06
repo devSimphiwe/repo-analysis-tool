@@ -9,7 +9,7 @@
 //   GET  /api/repos                           -> list clones (server-rendered initial)
 
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import type { AnalysisResult, AuthorMerge, ObjectMetrics, RepoRecord } from '@/lib/types';
+import type { AnalysisResult, AuthorMerge, AuthorMetrics, ObjectMetrics, RepoRecord } from '@/lib/types';
 import {
   dateToUnix,
   fmtDateTime,
@@ -34,6 +34,11 @@ export default function Dashboard({ initialRepos }: { initialRepos: RepoRecord[]
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [merges, setMerges] = useState<AuthorMerge[]>([]);
+  // Author ("filter by user") state: a single canonical email, or '' for all.
+  // `authorOptions` holds the full author list from the last UNFILTERED result so
+  // every author stays selectable in the dropdown while a filter is active.
+  const [authorFilter, setAuthorFilter] = useState('');
+  const [authorOptions, setAuthorOptions] = useState<AuthorMetrics[]>([]);
 
   const [url, setUrl] = useState('');
   const [since, setSince] = useState('');
@@ -60,7 +65,8 @@ export default function Dashboard({ initialRepos }: { initialRepos: RepoRecord[]
     id: string,
     sinceVal: string,
     untilVal: string,
-    mergesList: AuthorMerge[]
+    mergesList: AuthorMerge[],
+    authorsList: string[]
   ) {
     setAnalysisState('loading');
     setError(null);
@@ -71,6 +77,7 @@ export default function Dashboard({ initialRepos }: { initialRepos: RepoRecord[]
       const u = dateToUnix(untilVal);
       if (s !== undefined) body.since = s;
       if (u !== undefined) body.until = u;
+      if (authorsList.length > 0) body.authors = authorsList;
       const res = await fetch(`/api/repos/${id}/analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -80,6 +87,8 @@ export default function Dashboard({ initialRepos }: { initialRepos: RepoRecord[]
       const data = (await res.json()) as AnalysisResponse & { error?: string };
       if (!res.ok) throw new Error(data.error ?? 'Analysis failed');
       setResult({ repo: data.repo, analysis: data.analysis });
+      // Refresh the dropdown only from unfiltered results so it lists every author.
+      if (authorsList.length === 0) setAuthorOptions(data.analysis.authors);
       setAnalysisState('ready');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -92,29 +101,40 @@ export default function Dashboard({ initialRepos }: { initialRepos: RepoRecord[]
     if (id !== selectedId) {
       setResult(null);
       setMerges([]);
+      setAuthorFilter('');
     }
     setSelectedId(id);
-    void runAnalysis(id, since, until, []);
+    void runAnalysis(id, since, until, [], []);
   }
 
   function onSinceChange(value: string) {
     setSince(value);
-    if (selectedId) void runAnalysis(selectedId, value, until, merges);
+    if (selectedId)
+      void runAnalysis(selectedId, value, until, merges, authorFilter ? [authorFilter] : []);
   }
 
   function onUntilChange(value: string) {
     setUntil(value);
-    if (selectedId) void runAnalysis(selectedId, since, value, merges);
+    if (selectedId)
+      void runAnalysis(selectedId, since, value, merges, authorFilter ? [authorFilter] : []);
   }
 
   function refreshAnalysis() {
-    if (selectedId) void runAnalysis(selectedId, since, until, merges);
+    if (selectedId)
+      void runAnalysis(selectedId, since, until, merges, authorFilter ? [authorFilter] : []);
   }
 
   // Author merges (mailmap + manual) are recomputed server-side on every change.
   function handleMergesChange(next: AuthorMerge[]) {
     setMerges(next);
-    if (selectedId) void runAnalysis(selectedId, since, until, next);
+    if (selectedId)
+      void runAnalysis(selectedId, since, until, next, authorFilter ? [authorFilter] : []);
+  }
+
+  // Filter the whole analysis to a single author ("user"); '' clears the filter.
+  function onAuthorChange(email: string) {
+    setAuthorFilter(email);
+    if (selectedId) void runAnalysis(selectedId, since, until, merges, email ? [email] : []);
   }
 
   async function onClone(e: FormEvent<HTMLFormElement>) {
@@ -140,6 +160,8 @@ export default function Dashboard({ initialRepos }: { initialRepos: RepoRecord[]
       await refreshRepos();
       setUrl('');
       setMerges([]);
+      setAuthorFilter('');
+      setAuthorOptions(data.analysis.authors);
       setSelectedId(data.repo.id);
       setResult({ repo: data.repo, analysis: data.analysis });
       setAnalysisState('ready');
@@ -235,6 +257,9 @@ export default function Dashboard({ initialRepos }: { initialRepos: RepoRecord[]
                 onRefresh={refreshAnalysis}
                 merges={merges}
                 onMergesChange={handleMergesChange}
+                authorFilter={authorFilter}
+                authorOptions={authorOptions}
+                onAuthorChange={onAuthorChange}
                 busy={analysisState === 'loading'}
               />
             )}
@@ -331,6 +356,9 @@ function Results({
   onRefresh,
   merges,
   onMergesChange,
+  authorFilter,
+  authorOptions,
+  onAuthorChange,
   busy,
 }: {
   repo: RepoRecord;
@@ -338,6 +366,9 @@ function Results({
   onRefresh: () => void;
   merges: AuthorMerge[];
   onMergesChange: (next: AuthorMerge[]) => void;
+  authorFilter: string;
+  authorOptions: AuthorMetrics[];
+  onAuthorChange: (email: string) => void;
   busy: boolean;
 }) {
   const { repository: rm, timeRange } = analysis;
@@ -366,6 +397,12 @@ function Results({
             <span className="rounded-full bg-surface-2 px-3 py-1 text-xs ring-1 ring-line">
               HEAD <span className="font-mono text-accent">{shortHash(repo.head)}</span>
             </span>
+            <AuthorFilter
+              value={authorFilter}
+              options={authorOptions}
+              disabled={busy}
+              onChange={onAuthorChange}
+            />
             <button
               type="button"
               onClick={onRefresh}
@@ -480,6 +517,39 @@ function MergeNote({
         this is lower than the {fmtInt(all)} GitHub reports.
       </p>
     </div>
+  );
+}
+
+/* Author ("filter by user") dropdown. Options come from the last unfiltered
+ * result, so every author stays selectable while a filter is active. */
+function AuthorFilter({
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  options: AuthorMetrics[];
+  onChange: (email: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="inline-flex items-center gap-1.5">
+      <span className="text-xs text-muted">Author</span>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className="max-w-[15rem] cursor-pointer rounded-full border border-line bg-surface-2 py-1.5 pl-3.5 pr-8 text-xs font-medium outline-none transition-all hover:border-accent focus:border-accent focus:ring-2 focus:ring-accent/25 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <option value="">All authors</option>
+        {options.map((a) => (
+          <option key={a.email} value={a.email}>
+            {a.name || a.email} · {fmtInt(a.commits)}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

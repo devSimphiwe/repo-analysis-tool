@@ -63,10 +63,24 @@ export function computeMetrics(commits: RawCommit[], opts: AnalyzeOptions = {}):
   const resolveAuthor = (name: string, email: string): { name: string; email: string } =>
     mergeMap.get(email.toLowerCase()) ?? { name, email };
 
-  // H_{i,j} = { h ∈ H̄ | i ≤ h[committer-date] < j }
+  // Optional author ("filter by user"): keep only commits whose CANONICAL identity
+  // (after .mailmap + manual merges) matches one of the requested emails. Matching
+  // is case-insensitive; an empty list means "every author".
+  const authorFilter = (opts.authors ?? [])
+    .map((e) => (typeof e === 'string' ? e.trim() : ''))
+    .filter((e) => e !== '');
+  const authorSet = authorFilter.length
+    ? new Set(authorFilter.map((e) => e.toLowerCase()))
+    : null;
+
+  // H_{i,j} = { h ∈ H̄ | i ≤ h[committer-date] < j }, further restricted by author.
   const H = commits.filter((c) => {
     if (since !== undefined && c.committerDate < since) return false;
     if (until !== undefined && c.committerDate >= until) return false;
+    if (authorSet) {
+      const canon = resolveAuthor(c.authorName, c.authorEmail);
+      if (!authorSet.has(canon.email.toLowerCase())) return false;
+    }
     return true;
   });
 
@@ -231,5 +245,6 @@ export function computeMetrics(commits: RawCommit[], opts: AnalyzeOptions = {}):
     directories: dirList,
     repository,
     authors: authorList,
+    authorFilter,
   };
 }

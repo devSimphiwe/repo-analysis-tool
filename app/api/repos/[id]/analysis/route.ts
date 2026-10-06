@@ -21,6 +21,7 @@ interface AnalyzeInput {
   since?: number;
   until?: number;
   merges?: AuthorMerge[];
+  authors?: string[];
 }
 
 /** Coerce a search-param / body value into a finite UNIX-seconds number. */
@@ -53,6 +54,16 @@ function sanitizeMerges(value: unknown): AuthorMerge[] {
   return out;
 }
 
+/** Validate an untrusted author-filter value into a safe, bounded email list. */
+function sanitizeAuthors(value: unknown): string[] {
+  const arr = typeof value === 'string' ? value.split(',') : value;
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((e): e is string => typeof e === 'string' && e.trim() !== '')
+    .map((e) => e.trim())
+    .slice(0, 100);
+}
+
 async function analyze(id: string, input: AnalyzeInput) {
   const repo = await findRepo(id);
   if (!repo) {
@@ -74,6 +85,7 @@ async function analyze(id: string, input: AnalyzeInput) {
       mailmap,
       mergeCommits,
       authorMerges: input.merges ?? [],
+      authors: input.authors ?? [],
     };
     const analysis = computeMetrics(commits, opts);
     return NextResponse.json({ repo, analysis });
@@ -89,6 +101,7 @@ export async function GET(request: Request, ctx: Ctx) {
   return analyze(id, {
     since: toUnix(searchParams.get('since')),
     until: toUnix(searchParams.get('until')),
+    authors: sanitizeAuthors(searchParams.getAll('authors')),
   });
 }
 
@@ -104,5 +117,6 @@ export async function POST(request: Request, ctx: Ctx) {
     since: toUnix(body.since),
     until: toUnix(body.until),
     merges: sanitizeMerges(body.merges),
+    authors: sanitizeAuthors(body.authors),
   });
 }
