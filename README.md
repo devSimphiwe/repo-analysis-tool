@@ -29,6 +29,15 @@ Before you begin, make sure you have the following installed:
 - **[Git](https://git-scm.com/downloads)** — RATty shells out to `git` to clone
   repositories and read their history, so it must be available on your `PATH`.
 
+Make sure you have [Node.js](https://nodejs.org/) installed.
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.7/install.sh | bash
+source ~/.bashrc
+nvm install 22
+nvm use 22
+```
+
 Check your versions:
 
 ```bash
